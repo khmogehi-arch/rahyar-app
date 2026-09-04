@@ -1,7 +1,7 @@
-const path = require('path');
+const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
+const { dbPath } = require('./paths');
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data.sqlite3');
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -83,5 +83,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node_id);
   CREATE INDEX IF NOT EXISTS idx_destinations_floor ON destinations(floor_id);
 `);
+
+// On a serverless deployment (e.g. Vercel) the SQLite file lives on ephemeral
+// storage and is wiped on every cold start, so `npm run seed` can't be run
+// once against the deployed instance. Instead, seed the staff user from env
+// vars automatically whenever the users table is empty — this keeps a fresh
+// cold start always loggable-in with whatever ADMIN_USERNAME/ADMIN_PASSWORD
+// were configured on the hosting platform. Local dev can still use `npm run
+// seed` explicitly, or just rely on this same auto-seed.
+if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
+  const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  if (userCount === 0) {
+    const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
+    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(
+      process.env.ADMIN_USERNAME,
+      hash
+    );
+  }
+}
 
 module.exports = db;

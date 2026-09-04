@@ -3,11 +3,12 @@ const path = require('path');
 const multer = require('multer');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { uploadsDir } = require('../paths');
 
 const router = express.Router();
 
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, '..', '..', 'uploads'),
+  destination: uploadsDir,
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname) || '.png';
     cb(null, `floorplan-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);

@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
+const fs = require('fs');
 
+const { uploadsDir } = require('./paths');
 const authRoutes = require('./routes/auth');
 const buildingRoutes = require('./routes/buildings');
 const floorRoutes = require('./routes/floors');
@@ -12,11 +13,13 @@ const beaconRoutes = require('./routes/beacons');
 const destinationRoutes = require('./routes/destinations');
 const routeRoutes = require('./routes/route');
 
+fs.mkdirSync(uploadsDir, { recursive: true });
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+app.use('/uploads', express.static(uploadsDir));
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
