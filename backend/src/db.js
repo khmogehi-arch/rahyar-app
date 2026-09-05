@@ -1,11 +1,17 @@
 const bcrypt = require('bcryptjs');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const { dbPath } = require('./paths');
 
-const db = new Database(dbPath);
+// better-sqlite3 is a native addon: its compiled binary has to match the
+// exact OS/arch/libc of whatever runs it, which serverless platforms don't
+// guarantee at build time, and a mismatch crashes the whole Node process
+// (not a catchable JS error) instead of throwing. node:sqlite ships inside
+// Node itself, so there's no separate binary that can go out of sync with
+// the runtime.
+const db = new DatabaseSync(dbPath);
 
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
