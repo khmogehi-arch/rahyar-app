@@ -2,8 +2,8 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 
-const username = process.env.ADMIN_USERNAME || 'admin';
-const password = process.env.ADMIN_PASSWORD || 'change-this-password';
+const username = (process.env.ADMIN_USERNAME || 'admin').trim();
+const password = (process.env.ADMIN_PASSWORD || 'change-this-password').trim();
 
 const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
 

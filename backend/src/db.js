@@ -100,11 +100,16 @@ db.exec(`
 if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
   const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
   if (userCount === 0) {
-    const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
-    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(
-      process.env.ADMIN_USERNAME,
-      hash
-    );
+    // .trim() guards against a common Vercel dashboard mistake: pasting a
+    // secret with a trailing newline/space. seed-status only checks that the
+    // env vars are set and that the user row exists, not that the password
+    // that got hashed here matches what the admin actually types — so a
+    // stray whitespace character silently produces a hash that can never be
+    // logged into, while every other diagnostic still reports "configured".
+    const username = process.env.ADMIN_USERNAME.trim();
+    const password = process.env.ADMIN_PASSWORD.trim();
+    const hash = bcrypt.hashSync(password, 10);
+    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
   }
 }
 
