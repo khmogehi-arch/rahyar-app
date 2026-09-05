@@ -12,6 +12,7 @@ const qrcodeRoutes = require('./routes/qrcodes');
 const beaconRoutes = require('./routes/beacons');
 const destinationRoutes = require('./routes/destinations');
 const routeRoutes = require('./routes/route');
+const debugRoutes = require('./routes/debug');
 
 fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -32,6 +33,7 @@ app.use('/api/qrcodes', qrcodeRoutes);
 app.use('/api/beacons', beaconRoutes);
 app.use('/api/destinations', destinationRoutes);
 app.use('/api/route', routeRoutes);
+app.use('/api/debug', debugRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'یافت نشد' });
