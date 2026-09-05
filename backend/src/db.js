@@ -87,14 +87,25 @@ db.exec(`
 // On a serverless deployment (e.g. Vercel) the SQLite file lives on ephemeral
 // storage and is wiped on every cold start, so `npm run seed` can't be run
 // once against the deployed instance. Instead, seed the staff user from env
-// vars automatically whenever the users table is empty — this keeps a fresh
-// cold start always loggable-in with whatever ADMIN_USERNAME/ADMIN_PASSWORD
-// were configured on the hosting platform. Local dev can still use `npm run
-// seed` explicitly, or just rely on this same auto-seed.
+// vars automatically on every cold start — this keeps a fresh cold start
+// always loggable-in with whatever ADMIN_USERNAME/ADMIN_PASSWORD are
+// currently configured on the hosting platform. Local dev can still use
+// `npm run seed` explicitly, or just rely on this same auto-seed.
+//
+// This always overwrites the stored hash for ADMIN_USERNAME to match the
+// current ADMIN_PASSWORD env value, rather than only inserting when the
+// users table is empty. Only checking "is the table empty" left a trap on
+// ephemeral storage: if a user row was ever created with a stale password
+// (e.g. seeded before ADMIN_PASSWORD was set correctly on the platform, or
+// left over on a container Vercel kept warm across a redeploy), the table
+// was no longer empty and the stale hash would silently stick around
+// forever, no matter how many times ADMIN_PASSWORD was fixed and redeployed.
 if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
-  const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
-  if (userCount === 0) {
-    const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
+  const hash = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(process.env.ADMIN_USERNAME);
+  if (existing) {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, existing.id);
+  } else {
     db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(
       process.env.ADMIN_USERNAME,
       hash
