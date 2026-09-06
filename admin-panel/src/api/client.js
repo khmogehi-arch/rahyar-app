@@ -1,5 +1,11 @@
 import axios from 'axios';
 
+// Bump this on any change that must force a fresh Vercel build instead of a
+// cached one (e.g. after fixing VITE_API_URL and redeploys keep serving the
+// same output bundle hash) — content-hashed filenames only change when the
+// file content itself changes.
+// build-marker: 2026-09-06
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 // VITE_API_URL is baked in at build time, so a stale value (an old preview
