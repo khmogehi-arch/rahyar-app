@@ -1,21 +1,16 @@
 const express = require('express');
-const path = require('path');
 const multer = require('multer');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
-const { uploadsDir } = require('../paths');
+const { saveFloorPlanImage } = require('../storage');
 
 const router = express.Router();
 
-const storage = multer.diskStorage({
-  destination: uploadsDir,
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.png';
-    cb(null, `floorplan-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-  },
-});
+// Buffered in memory rather than written to disk directly, since the image
+// then needs to go to Vercel Blob (or the local-dev disk fallback) — see
+// storage.js.
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/^image\//.test(file.mimetype)) return cb(null, true);
@@ -25,57 +20,63 @@ const upload = multer({
 
 router.use(requireAuth);
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { buildingId, name, order } = req.body || {};
   if (!buildingId || !name) {
     return res.status(400).json({ error: 'ساختمان و نام طبقه الزامی است' });
   }
-  const result = db
-    .prepare('INSERT INTO floors (building_id, name, floor_order) VALUES (?, ?, ?)')
-    .run(buildingId, name, order ?? 0);
-  const floor = db.prepare('SELECT * FROM floors WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(floor);
+  const { rows } = await db.query(
+    'INSERT INTO floors (building_id, name, floor_order) VALUES ($1, $2, $3) RETURNING *',
+    [buildingId, name, order ?? 0]
+  );
+  res.status(201).json(rows[0]);
 });
 
-router.get('/:id', (req, res) => {
-  const floor = db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const { rows: floorRows } = await db.query('SELECT * FROM floors WHERE id = $1', [req.params.id]);
+  const floor = floorRows[0];
   if (!floor) return res.status(404).json({ error: 'طبقه یافت نشد' });
-  const nodes = db.prepare('SELECT * FROM nodes WHERE floor_id = ?').all(floor.id);
+  const { rows: nodes } = await db.query('SELECT * FROM nodes WHERE floor_id = $1', [floor.id]);
   res.json({ ...floor, nodes });
 });
 
-router.put('/:id', (req, res) => {
-  const floor = db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id);
+router.put('/:id', async (req, res) => {
+  const { rows: floorRows } = await db.query('SELECT * FROM floors WHERE id = $1', [req.params.id]);
+  const floor = floorRows[0];
   if (!floor) return res.status(404).json({ error: 'طبقه یافت نشد' });
   const { name, order } = req.body || {};
-  db.prepare('UPDATE floors SET name = ?, floor_order = ? WHERE id = ?').run(
-    name ?? floor.name,
-    order ?? floor.floor_order,
-    req.params.id
+  const { rows } = await db.query(
+    'UPDATE floors SET name = $1, floor_order = $2 WHERE id = $3 RETURNING *',
+    [name ?? floor.name, order ?? floor.floor_order, req.params.id]
   );
-  res.json(db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id));
+  res.json(rows[0]);
 });
 
-router.delete('/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM floors WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'طبقه یافت نشد' });
+router.delete('/:id', async (req, res) => {
+  const { rowCount } = await db.query('DELETE FROM floors WHERE id = $1', [req.params.id]);
+  if (rowCount === 0) return res.status(404).json({ error: 'طبقه یافت نشد' });
   res.status(204).end();
 });
 
 // Upload / replace the floor plan image
-router.post('/:id/plan-image', upload.single('image'), (req, res) => {
-  const floor = db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id);
+router.post('/:id/plan-image', upload.single('image'), async (req, res) => {
+  const { rows: floorRows } = await db.query('SELECT * FROM floors WHERE id = $1', [req.params.id]);
+  const floor = floorRows[0];
   if (!floor) return res.status(404).json({ error: 'طبقه یافت نشد' });
   if (!req.file) return res.status(400).json({ error: 'فایل تصویر ارسال نشده است' });
 
-  const url = `/uploads/${req.file.filename}`;
-  db.prepare('UPDATE floors SET floor_plan_image_url = ? WHERE id = ?').run(url, req.params.id);
-  res.json(db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id));
+  const url = await saveFloorPlanImage(req.file);
+  const { rows } = await db.query(
+    'UPDATE floors SET floor_plan_image_url = $1 WHERE id = $2 RETURNING *',
+    [url, req.params.id]
+  );
+  res.json(rows[0]);
 });
 
 // Set scale: click two points a known real-world distance apart on the plan.
-router.post('/:id/scale', (req, res) => {
-  const floor = db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id);
+router.post('/:id/scale', async (req, res) => {
+  const { rows: floorRows } = await db.query('SELECT * FROM floors WHERE id = $1', [req.params.id]);
+  const floor = floorRows[0];
   if (!floor) return res.status(404).json({ error: 'طبقه یافت نشد' });
 
   const { point1, point2, realDistanceMeters } = req.body || {};
@@ -89,12 +90,12 @@ router.post('/:id/scale', (req, res) => {
   }
 
   const scaleMetersPerPixel = realDistanceMeters / pixelDistance;
-  db.prepare('UPDATE floors SET scale_meters_per_pixel = ? WHERE id = ?').run(
-    scaleMetersPerPixel,
-    req.params.id
+  const { rows } = await db.query(
+    'UPDATE floors SET scale_meters_per_pixel = $1 WHERE id = $2 RETURNING *',
+    [scaleMetersPerPixel, req.params.id]
   );
 
-  res.json(db.prepare('SELECT * FROM floors WHERE id = ?').get(req.params.id));
+  res.json(rows[0]);
 });
 
 module.exports = router;

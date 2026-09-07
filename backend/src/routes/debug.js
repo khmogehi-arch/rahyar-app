@@ -1,15 +1,14 @@
 const express = require('express');
-const { uploadsDir, dbPath } = require('../paths');
+const { uploadsDir } = require('../paths');
 
 const router = express.Router();
 
-// Diagnostic endpoint for the "admin login fails after deploy" class of bugs
-// (see the /tmp fallback fix in paths.js): reports whether the sqlite file
-// could be opened, whether the auto-seed env vars are set, and whether the
+// Diagnostic endpoint for the "admin login fails after deploy" class of bugs:
+// reports whether Postgres/Blob env vars are configured and whether the
 // admin user actually exists — without leaking the username or password.
-// Wrapped defensively so a broken DB/native module reports a JSON error
-// here instead of crashing the whole function.
-router.get('/seed-status', (req, res) => {
+// Wrapped defensively so a broken DB module reports a JSON error here
+// instead of crashing the whole function.
+router.get('/seed-status', async (req, res) => {
   let db;
   try {
     db = require('../db');
@@ -23,7 +22,8 @@ router.get('/seed-status', (req, res) => {
   }
 
   try {
-    const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+    const { rows: countRows } = await db.query('SELECT COUNT(*)::int AS count FROM users');
+    const userCount = countRows[0].count;
     const adminEnvConfigured = Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD);
     // seed-status previously only reported "user exists" — that passes even when
     // the hash that got created can never be logged into, e.g. a trailing
@@ -33,15 +33,18 @@ router.get('/seed-status', (req, res) => {
     // makes every login 500 regardless of the password being correct.
     const hasSurroundingWhitespace = (v) => typeof v === 'string' && v !== v.trim();
     const trimmedAdminUsername = process.env.ADMIN_USERNAME ? process.env.ADMIN_USERNAME.trim() : null;
-    const adminUserExists = trimmedAdminUsername
-      ? Boolean(db.prepare('SELECT id FROM users WHERE username = ?').get(trimmedAdminUsername))
-      : null;
+    let adminUserExists = null;
+    if (trimmedAdminUsername) {
+      const { rows } = await db.query('SELECT id FROM users WHERE username = $1', [trimmedAdminUsername]);
+      adminUserExists = Boolean(rows[0]);
+    }
 
     res.json({
       ok: true,
       environment: {
         vercel: Boolean(process.env.VERCEL),
-        dbPath,
+        databaseConfigured: Boolean(process.env.DATABASE_URL),
+        blobConfigured: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
         uploadsDir,
       },
       admin: {

@@ -42,6 +42,10 @@ export { API_URL };
 
 export function fileUrl(path) {
   if (!path) return null;
+  // Floor plan images now come back as either a relative /uploads/... path
+  // (local dev fallback) or an already-absolute Vercel Blob URL — don't
+  // re-prefix the latter with API_URL.
+  if (/^https?:\/\//.test(path)) return path;
   return `${API_URL}${path}`;
 }
 

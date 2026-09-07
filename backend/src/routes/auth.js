@@ -6,7 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   // Logged with a request id so a specific failed attempt can be found in
   // Vercel's function logs and matched against what the browser reported.
   // Never logs the password or password_hash itself.
@@ -26,7 +26,8 @@ router.post('/login', (req, res) => {
       return res.status(500).json({ error: 'پیکربندی سرور ناقص است (JWT_SECRET)' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    const { rows } = await db.query('SELECT * FROM users WHERE username = $1', [username]);
+    const user = rows[0];
     const passwordMatches = user ? bcrypt.compareSync(password, user.password_hash) : false;
 
     if (!user || !passwordMatches) {
