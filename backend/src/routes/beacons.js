@@ -9,49 +9,48 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-router.get('/', (req, res) => {
-  const rows = db
-    .prepare(
-      `SELECT bc.*, n.label AS node_label, n.floor_id
-       FROM beacons bc JOIN nodes n ON n.id = bc.node_id
-       ORDER BY bc.id`
-    )
-    .all();
+router.get('/', async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT bc.*, n.label AS node_label, n.floor_id
+     FROM beacons bc JOIN nodes n ON n.id = bc.node_id
+     ORDER BY bc.id`
+  );
   res.json(rows);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { nodeId, uuid, major, minor } = req.body || {};
   if (!nodeId || !uuid || major == null || minor == null) {
     return res.status(400).json({ error: 'nodeId، uuid، major و minor الزامی است' });
   }
-  const node = db.prepare('SELECT * FROM nodes WHERE id = ?').get(nodeId);
+  const { rows: nodeRows } = await db.query('SELECT * FROM nodes WHERE id = $1', [nodeId]);
+  const node = nodeRows[0];
   if (!node) return res.status(404).json({ error: 'نقطه یافت نشد' });
   if (node.type !== 'elevator') {
     return res.status(400).json({ error: 'بیکن فقط به نقطه از نوع آسانسور متصل می‌شود' });
   }
-  const result = db
-    .prepare('INSERT INTO beacons (node_id, uuid, major, minor) VALUES (?, ?, ?, ?)')
-    .run(nodeId, uuid, major, minor);
-  res.status(201).json(db.prepare('SELECT * FROM beacons WHERE id = ?').get(result.lastInsertRowid));
+  const { rows } = await db.query(
+    'INSERT INTO beacons (node_id, uuid, major, minor) VALUES ($1, $2, $3, $4) RETURNING *',
+    [nodeId, uuid, major, minor]
+  );
+  res.status(201).json(rows[0]);
 });
 
-router.put('/:id', (req, res) => {
-  const beacon = db.prepare('SELECT * FROM beacons WHERE id = ?').get(req.params.id);
+router.put('/:id', async (req, res) => {
+  const { rows: existingRows } = await db.query('SELECT * FROM beacons WHERE id = $1', [req.params.id]);
+  const beacon = existingRows[0];
   if (!beacon) return res.status(404).json({ error: 'بیکن یافت نشد' });
   const { uuid, major, minor } = req.body || {};
-  db.prepare('UPDATE beacons SET uuid = ?, major = ?, minor = ? WHERE id = ?').run(
-    uuid ?? beacon.uuid,
-    major ?? beacon.major,
-    minor ?? beacon.minor,
-    req.params.id
+  const { rows } = await db.query(
+    'UPDATE beacons SET uuid = $1, major = $2, minor = $3 WHERE id = $4 RETURNING *',
+    [uuid ?? beacon.uuid, major ?? beacon.major, minor ?? beacon.minor, req.params.id]
   );
-  res.json(db.prepare('SELECT * FROM beacons WHERE id = ?').get(req.params.id));
+  res.json(rows[0]);
 });
 
-router.delete('/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM beacons WHERE id = ?').run(req.params.id);
-  if (result.changes === 0) return res.status(404).json({ error: 'بیکن یافت نشد' });
+router.delete('/:id', async (req, res) => {
+  const { rowCount } = await db.query('DELETE FROM beacons WHERE id = $1', [req.params.id]);
+  if (rowCount === 0) return res.status(404).json({ error: 'بیکن یافت نشد' });
   res.status(204).end();
 });
 
