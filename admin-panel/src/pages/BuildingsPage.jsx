@@ -117,6 +117,15 @@ export default function BuildingsPage() {
     await loadBuildings();
   }
 
+  async function handleDeleteFloor(id) {
+    if (!window.confirm('این طبقه و همه نقشه/نودها/مسیرها/QR کدهای آن حذف شود؟')) return;
+    await client.delete(`/floors/${id}`);
+    if (selectedFloorId === id) {
+      setSelectedFloorId(null);
+    }
+    await loadBuildingDetail(selectedBuildingId);
+  }
+
   return (
     <div className="page">
       <h2>ساختمان‌ها</h2>
@@ -178,6 +187,16 @@ export default function BuildingsPage() {
                     <span>
                       {f.name} {f.scale_meters_per_pixel ? '✓ مقیاس‌بندی شده' : ''}
                     </span>
+                    <button
+                      type="button"
+                      className="btn-icon-danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFloor(f.id);
+                      }}
+                    >
+                      حذف
+                    </button>
                   </li>
                 ))}
               </ul>
