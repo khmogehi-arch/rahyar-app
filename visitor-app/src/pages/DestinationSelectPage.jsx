@@ -8,12 +8,17 @@ export default function DestinationSelectPage() {
   const entry = loadEntry();
   const [destinations, setDestinations] = useState([]);
   const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!entry) return;
     client
       .get('/destinations/public', { params: { buildingId: entry.buildingId } })
-      .then(({ data }) => setDestinations(data));
+      .then(({ data }) => setDestinations(data))
+      .catch((err) => {
+        console.error('[rahyar-visitor] destinations request failed', err);
+        setLoadError('خطا در اتصال به سرور. لطفاً اتصال اینترنت خود را بررسی کرده و دوباره تلاش کنید.');
+      });
   }, [entry]);
 
   const grouped = useMemo(() => {
@@ -49,7 +54,11 @@ export default function DestinationSelectPage() {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {destinations.length === 0 && <p className="muted">مقصدی برای این ساختمان ثبت نشده است.</p>}
+      {loadError && <p className="error-text">{loadError}</p>}
+
+      {!loadError && destinations.length === 0 && (
+        <p className="muted">مقصدی برای این ساختمان ثبت نشده است.</p>
+      )}
 
       {[...grouped.entries()].map(([category, items]) => (
         <section key={category} className="category-section">

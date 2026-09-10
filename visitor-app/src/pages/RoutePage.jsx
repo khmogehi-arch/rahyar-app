@@ -25,7 +25,14 @@ export default function RoutePage() {
     client
       .get('/route', { params: { from: entry.entranceNodeId, to: destinationNodeId } })
       .then(({ data }) => setRoute(data))
-      .catch((err) => setError(err.response?.data?.error || 'مسیری یافت نشد'));
+      .catch((err) => {
+        if (err.response) {
+          setError(err.response.data?.error || 'مسیری یافت نشد');
+        } else {
+          console.error('[rahyar-visitor] route request failed with no response', err);
+          setError('خطا در اتصال به سرور. لطفاً اتصال اینترنت خود را بررسی کرده و دوباره تلاش کنید.');
+        }
+      });
   }, [entry, destinationNodeId]);
 
   function handleLost() {

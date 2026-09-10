@@ -24,7 +24,19 @@ export default function EntryPage() {
         navigate('/destinations', { replace: true });
       } catch (err) {
         if (!cancelled) {
-          setError(err.response?.data?.error || 'کد QR نامعتبر است');
+          if (err.response) {
+            // Backend actually answered (e.g. 404 for an unknown token) —
+            // this is a genuinely invalid QR code.
+            setError(err.response.data?.error || 'کد QR نامعتبر است');
+          } else {
+            // No response reached us at all: a network/CORS failure, most
+            // often caused by VITE_API_URL pointing at a stale preview
+            // backend URL or Vercel Deployment Protection blocking the
+            // request. This is not the same problem as an invalid QR code,
+            // so don't tell the visitor their code is wrong.
+            console.error('[rahyar-visitor] QR resolve failed with no response', err);
+            setError('خطا در اتصال به سرور. لطفاً اتصال اینترنت خود را بررسی کرده و دوباره تلاش کنید.');
+          }
         }
       }
     }
