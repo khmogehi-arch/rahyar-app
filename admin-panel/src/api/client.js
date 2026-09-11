@@ -51,6 +51,25 @@ export function fileUrl(path) {
 
 export function visitorEntryUrl(token) {
   const visitorUrl = import.meta.env.VITE_VISITOR_APP_URL || 'http://localhost:5174';
+  // VITE_VISITOR_APP_URL must be just an origin (e.g.
+  // "https://rahyar-visitor-app.vercel.app"), no trailing path. A "/" typo'd
+  // where a "-" was meant in the domain (e.g. "rahyar/visitor-app.vercel.app")
+  // still parses as a "valid" URL, just with the wrong part read as a path —
+  // which silently breaks every generated QR link. Warn on load so a typo'd
+  // Vercel env var is obvious in devtools instead of showing up as bad QR
+  // links in the field.
+  try {
+    const { pathname } = new URL(visitorUrl);
+    if (pathname && pathname !== '/') {
+      console.warn(
+        `[rahyar-admin] VITE_VISITOR_APP_URL="${visitorUrl}" has a path ("${pathname}") — it should be ` +
+          'just the origin with no trailing path, e.g. "https://rahyar-visitor-app.vercel.app". ' +
+          'Check for a "/" where a "-" was meant in the domain.'
+      );
+    }
+  } catch {
+    console.warn(`[rahyar-admin] VITE_VISITOR_APP_URL="${visitorUrl}" is not a valid URL.`);
+  }
   return `${visitorUrl}/entry/${token}`;
 }
 
