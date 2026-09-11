@@ -11,22 +11,46 @@ const connectionString = process.env.DATABASE_URL;
 
 const isLocalConnection = connectionString && /localhost|127\.0\.0\.1/.test(connectionString);
 
+// Neon suspends idle computes; waking one on a cold start can take a few
+// seconds, and pg's own default (0 = wait forever) would otherwise let a
+// genuinely dead connection hang until Vercel's own function timeout kills
+// it with a much less useful error. 15s gives cold starts room to wake up
+// without doing that.
 const pool = connectionString
   ? new Pool({
       connectionString,
       // Neon (and most managed Postgres) require TLS but present a cert
       // chain `rejectUnauthorized` won't validate in Node by default.
       ssl: isLocalConnection ? false : { rejectUnauthorized: false },
+      connectionTimeoutMillis: 15000,
     })
   : null;
 
-const schemaReady = (async () => {
-  if (!pool) {
-    throw new Error(
-      'DATABASE_URL تنظیم نشده است — یک دیتابیس Postgres (مثلاً Neon از تب Storage در Vercel) وصل کنید.'
-    );
-  }
+if (connectionString && !isLocalConnection && !/-pooler\./.test(connectionString)) {
+  // Neon's pooled endpoint (PgBouncer, host contains "-pooler") is built for
+  // exactly this pattern — many short-lived serverless invocations each
+  // opening their own connection. A direct connection string here is the
+  // likely reason cold starts race the compute wake-up and hit
+  // "Authentication timed out".
+  console.warn(
+    '[db] DATABASE_URL does not look like a Neon pooled connection (expected "-pooler" in the host). ' +
+      'On Vercel serverless, use the pooled connection string to avoid cold-start connection timeouts.'
+  );
+}
 
+async function withRetries(fn, { attempts = 3, baseDelayMs = 1000 } = {}) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === attempts) throw err;
+      console.error(`[db] connection attempt ${attempt}/${attempts} failed: ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+}
+
+async function initSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -116,6 +140,20 @@ const schemaReady = (async () => {
       await pool.query('INSERT INTO users (username, password_hash) VALUES ($1, $2)', [username, hash]);
     }
   }
+}
+
+const schemaReady = (async () => {
+  if (!pool) {
+    throw new Error(
+      'DATABASE_URL تنظیم نشده است — یک دیتابیس Postgres (مثلاً Neon از تب Storage در Vercel) وصل کنید.'
+    );
+  }
+
+  // Cold starts race Neon waking a suspended compute against its own
+  // authentication timeout — the first attempt can lose that race even
+  // though the connection is perfectly healthy once the compute is up, so a
+  // couple of retries clears most of these without any user-visible impact.
+  await withRetries(initSchema, { attempts: 3, baseDelayMs: 1000 });
 })();
 
 // Attach a handler now so a failed init (e.g. missing DATABASE_URL) doesn't
