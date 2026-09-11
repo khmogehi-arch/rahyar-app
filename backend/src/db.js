@@ -7,7 +7,18 @@ const { Pool } = require('pg');
 // requests. A real Postgres database (e.g. Neon, reachable over the
 // network from any instance) is what makes writes actually durable. See
 // README for how to connect one via the Vercel Storage tab.
-const connectionString = process.env.DATABASE_URL;
+// Vercel's Neon integration auto-populates several Postgres env vars
+// (DATABASE_URL, POSTGRES_URL, POSTGRES_PRISMA_URL, DATABASE_URL_UNPOOLED,
+// ...) and which of them actually holds the pooled (PgBouncer, host contains
+// "-pooler") connection string can vary. Rather than assume DATABASE_URL is
+// the pooled one, prefer whichever candidate actually is — a direct
+// connection here is what makes cold starts race Neon's compute wake-up and
+// hit "Authentication timed out".
+const POOLED_CANDIDATE_ENV_VARS = ['DATABASE_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL'];
+const isPooledConnectionString = (value) => Boolean(value) && /-pooler\./.test(value);
+const pooledEnvVar = POOLED_CANDIDATE_ENV_VARS.find((name) => isPooledConnectionString(process.env[name]));
+const usedEnvVar = pooledEnvVar || (process.env.DATABASE_URL ? 'DATABASE_URL' : null);
+const connectionString = usedEnvVar ? process.env[usedEnvVar] : undefined;
 
 const isLocalConnection = connectionString && /localhost|127\.0\.0\.1/.test(connectionString);
 
@@ -26,15 +37,13 @@ const pool = connectionString
     })
   : null;
 
-if (connectionString && !isLocalConnection && !/-pooler\./.test(connectionString)) {
-  // Neon's pooled endpoint (PgBouncer, host contains "-pooler") is built for
-  // exactly this pattern — many short-lived serverless invocations each
-  // opening their own connection. A direct connection string here is the
-  // likely reason cold starts race the compute wake-up and hit
-  // "Authentication timed out".
+if (connectionString && !isLocalConnection && !isPooledConnectionString(connectionString)) {
+  // None of the pooled candidates matched, so we fell back to DATABASE_URL
+  // as-is even though it doesn't look pooled either.
   console.warn(
-    '[db] DATABASE_URL does not look like a Neon pooled connection (expected "-pooler" in the host). ' +
-      'On Vercel serverless, use the pooled connection string to avoid cold-start connection timeouts.'
+    `[db] ${usedEnvVar} does not look like a Neon pooled connection (expected "-pooler" in the host). ` +
+      'On Vercel serverless, use the pooled connection string (or set POSTGRES_PRISMA_URL/POSTGRES_URL to it) ' +
+      'to avoid cold-start connection timeouts.'
   );
 }
 
@@ -168,4 +177,4 @@ async function query(text, params) {
   return pool.query(text, params);
 }
 
-module.exports = { query, pool, schemaReady };
+module.exports = { query, pool, schemaReady, connectionInfo: { usedEnvVar, isPooled: isPooledConnectionString(connectionString) } };
