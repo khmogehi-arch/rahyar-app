@@ -44,6 +44,9 @@ router.get('/seed-status', async (req, res) => {
       environment: {
         vercel: Boolean(process.env.VERCEL),
         databaseConfigured: Boolean(process.env.DATABASE_URL),
+        databaseUsesPooledConnection: process.env.DATABASE_URL
+          ? /-pooler\./.test(process.env.DATABASE_URL)
+          : null,
         blobConfigured: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
         uploadsDir,
       },
