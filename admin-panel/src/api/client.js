@@ -1,19 +1,22 @@
 import axios from 'axios';
 
 // Bump this on any change that must force a fresh Vercel build instead of a
-// cached one (e.g. after fixing VITE_API_URL and redeploys keep serving the
-// same output bundle hash) — content-hashed filenames only change when the
-// file content itself changes.
-// build-marker: 2026-09-06
+// cached one (e.g. after fixing VITE_API_URL/VITE_VISITOR_APP_URL and
+// redeploys keep serving the same output bundle hash) — content-hashed
+// filenames only change when the file content itself changes.
+// build-marker: 2026-09-11
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const VISITOR_APP_URL = import.meta.env.VITE_VISITOR_APP_URL || 'http://localhost:5174';
 
-// VITE_API_URL is baked in at build time, so a stale value (an old preview
-// deployment URL, or nothing at all) silently makes every request fail with
-// no useful error in the UI. Logging it on load means checking the deployed
-// admin panel's devtools console immediately shows which backend it's
-// actually pointed at.
+// Both VITE_ vars are baked in at build time, so a stale value (an old
+// preview deployment URL, a typo, or nothing at all) silently produces wrong
+// output with no error in the UI. Logging them on load means checking the
+// deployed admin panel's devtools console immediately shows which backend
+// and visitor app it's actually pointed at, without digging through the
+// built bundle.
 console.info('[rahyar-admin] API_URL =', API_URL);
+console.info('[rahyar-admin] VISITOR_APP_URL =', VISITOR_APP_URL);
 
 const client = axios.create({ baseURL: `${API_URL}/api` });
 
@@ -50,8 +53,7 @@ export function fileUrl(path) {
 }
 
 export function visitorEntryUrl(token) {
-  const visitorUrl = import.meta.env.VITE_VISITOR_APP_URL || 'http://localhost:5174';
-  return `${visitorUrl}/entry/${token}`;
+  return `${VISITOR_APP_URL}/entry/${token}`;
 }
 
 export default client;
