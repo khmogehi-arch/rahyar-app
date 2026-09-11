@@ -43,10 +43,13 @@ router.get('/seed-status', async (req, res) => {
       ok: true,
       environment: {
         vercel: Boolean(process.env.VERCEL),
-        databaseConfigured: Boolean(process.env.DATABASE_URL),
-        databaseUsesPooledConnection: process.env.DATABASE_URL
-          ? /-pooler\./.test(process.env.DATABASE_URL)
-          : null,
+        databaseConfigured: Boolean(db.connectionInfo.usedEnvVar),
+        // Which env var actually supplied the connection string in use (db.js
+        // prefers a pooled candidate over DATABASE_URL when one is available)
+        // and whether it looks like Neon's pooled (PgBouncer, "-pooler" host)
+        // endpoint — the required setup for Vercel's serverless functions.
+        databaseEnvVarUsed: db.connectionInfo.usedEnvVar,
+        databaseUsesPooledConnection: db.connectionInfo.usedEnvVar ? db.connectionInfo.isPooled : null,
         blobConfigured: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
         uploadsDir,
       },
